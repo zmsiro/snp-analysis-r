@@ -1,0 +1,28 @@
+### Review for zmsiro
+
+## Data Inspection
+
+#Strengths:
+
+Automation: The use of make_chr_wide and write_taxa_files functions is great. It avoids "copy-pasting" code for all 10 chromosomes, which reduces the chance of errors.
+
+File Management: I like using dir.create with recursive = TRUE. This ensures the code runs smoothly even if the user hasn't manually created the output folders.
+
+#Suggestions for Improvement:
+
+Column Names: In make_chr_wide, the pivot_wider function uses Sample_ID for names. While correct, it might result in a very wide table that is hard to read in a text editor.
+
+
+
+## Visualization
+
+#Strengths:
+
+Clear Faceting: The use of facet_wrap(~ Group, scales = "free_x") in the genotype proportion plot is great to handle the large number of samples without the x-axis becoming a blurry mess.
+
+Polymorphic SNP Logic: Logic for identifying polymorphic SNPs (counting n_distinct genotypes > 1) is robust.
+
+#Suggestions for Improvement:
+
+X-Axis Readability: In the "Proportion of genotype classes per sample" plot, there are likely too many samples to read individual Sample_ID names. The student might consider removing the x-axis text entirely for that specific plot or summarizing by Group instead of ID.
+
