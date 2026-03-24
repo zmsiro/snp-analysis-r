@@ -1,0 +1,28 @@
+---
+title: "Tuqa Ibrahim's review"
+author: "Tuqa"
+date: "2026-03-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Your repository looks organized, and I easily found the output files. I also compared some of them to my files, and they matched. The code ran without errors. I think you did a great job! I don't have any major criticisms, but I do have some suggestions that you might find useful.
+
+1- I think it would be a good idea to include further explanation of your workflow and what each code block does and how it works.
+
+2- I suggest including a short comment after each graph summarizing its main result.
+
+3- You can expand your data inspection section a little by adding `names(genotypes)[1:15]` and `names(snp_positions)` to show the column names.
+
+4- Also, viewing the first part of the two input files using `head(genotypes)` and `head(snp_positions)` is another good way to inspect the data.
+
+5- You can check the class of the data in each column in the position file using `sapply(snp_positions, class)` and in the first 15 columns of the genotypes file, which are a good representation of the others, using `sapply(genotypes[1:15], class)`.
+
+6- It is also a good idea to check the different group names included in the genotypes file to make sure you have the required maize groups (ZMMIL, ZMMLR, and ZMMMR) and teosinte groups (ZMPBA, ZMPIL, and ZMPJA) using `unique(genotypes[[3]])`.
+
+7- The graph "Proportion of genotype classes per sample" is a little hard for me to read. The large number of facets and overlapping sample labels make the figure look crowded, so I couldn't see the main trend clearly. Maybe it would be better if you grouped the samples into the two main categories, Maize and Teosinte, rather than separating them into many subgroup panels. I think this would make the presentation better because it would make the overall comparison much clearer.
+
+8- For the graph "Proportion of genotype classes by population group", the labels on the x-axis are crowded and difficult to read. I suggest you rotate the x-axis labels and/or decrease the text size and/or make the figure wider. Or maybe you could make the plot horizontal instead of vertical. I think this would make the group names much clearer.
