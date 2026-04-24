@@ -1,0 +1,225 @@
+---
+title: "SNP Analysis in R"
+author: "Zoe Sirotiak"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = TRUE,
+	warning = TRUE
+)
+```
+
+# Data inspection and processing
+
+```{r data-processing, message=TRUE, warning=TRUE}
+
+rm(list = ls())
+library(tidyverse)
+
+# Giving paths to data
+geno_path <- "fang_et_al_genotypes.txt"
+pos_path  <- "snp_position.txt"
+
+# Reading data
+geno <- readr:: read_tsv(geno_path)
+pos <- readr:: read_tsv(pos_path)
+
+# Keeping only necessary columns
+pos2 <- pos %>%
+  dplyr::transmute(
+    SNP_ID     = as.character(.data$SNP_ID),
+    Chromosome = suppressWarnings(as.integer(.data$Chromosome)),
+    Position   = suppressWarnings(as.integer(.data$Position))
+  ) %>%
+  filter(!is.na(Chromosome), Chromosome %in% 1:10, !is.na(Position))
+
+# Pivot genotype data to long format
+geno_long <- geno %>%
+  tidyr::pivot_longer(
+    cols = -c(Sample_ID, JG_OTU, Group),
+    names_to  = "SNP_ID",
+    values_to = "Genotype"
+  ) %>%
+  mutate(SNP_ID = as.character(SNP_ID))
+
+# Join genotype calls to SNP positions
+geno_pos_long <- geno_long %>%
+  inner_join(pos2, by = "SNP_ID")
+
+# Splitting maize and teosinte files
+maize_groups    <- c("ZMMIL", "ZMMLR", "ZMMMR")
+teosinte_groups <- c("ZMPBA", "ZMPIL", "ZMPJA")
+
+maize_long <- geno_pos_long %>% filter(Group %in% maize_groups)
+teo_long   <- geno_pos_long %>% filter(Group %in% teosinte_groups)
+
+# Creaing output folders
+dir.create("output/maize/inc", recursive = TRUE, showWarnings = FALSE)
+dir.create("output/maize/dec", recursive = TRUE, showWarnings = FALSE)
+dir.create("output/teosinte/inc", recursive = TRUE, showWarnings = FALSE)
+dir.create("output/teosinte/dec", recursive = TRUE, showWarnings = FALSE)
+
+# Build wide chr table with required column order
+make_chr_wide <- function(dat_long, chr_num, decreasing = FALSE, missing_symbol = "?") {
+  
+  dat_long %>%
+    filter(Chromosome == chr_num) %>%
+    select(SNP_ID, Chromosome, Position, Sample_ID, Genotype) %>%
+    mutate(
+      Genotype = if_else(is.na(Genotype) | Genotype == "" | Genotype == "NA" | Genotype == "?/?",
+                         missing_symbol, Genotype)
+    ) %>%
+    pivot_wider(
+      names_from  = Sample_ID,
+      values_from = Genotype
+    ) %>%
+    arrange(if (decreasing) desc(Position) else Position)
+}
+
+# Write 20 files for a taxa: 10 inc (? for missing), 10 dec (- for missing)
+write_taxa_files <- function(dat_long, base_dir) {
+  
+  lapply(1:10, function(chr) {
+    out <- make_chr_wide(dat_long, chr, decreasing = FALSE, missing_symbol = "?")
+    readr::write_tsv(out, file.path(base_dir, "inc", paste0("chr", chr, "_inc.tsv")))
+  })
+  
+  lapply(1:10, function(chr) {
+    out <- make_chr_wide(dat_long, chr, decreasing = TRUE, missing_symbol = "-")
+    readr::write_tsv(out, file.path(base_dir, "dec", paste0("chr", chr, "_dec.tsv")))
+  })
+  
+  invisible(TRUE)
+}
+
+# Produce all 40 files, 20 each
+write_taxa_files(maize_long, "output/maize")
+write_taxa_files(teo_long,   "output/teosinte")
+
+# Checking files
+all_out <- list.files("output", recursive = TRUE, full.names = TRUE, pattern = "\\.tsv$")
+length(all_out)
+
+check_one <- function(path, decreasing_expected = FALSE) {
+  x <- readr::read_tsv(path, show_col_types = FALSE)
+  stopifnot(identical(names(x)[1:3], c("SNP_ID", "Chromosome", "Position")))
+  if (decreasing_expected) {
+    stopifnot(all(diff(x$Position) <= 0))
+  } else {
+    stopifnot(all(diff(x$Position) >= 0))
+  }
+  TRUE
+}
+
+# Checking one file for each
+check_one("output/maize/inc/chr1_inc.tsv", decreasing_expected = FALSE)
+check_one("output/maize/dec/chr1_dec.tsv", decreasing_expected = TRUE)
+
+```
+
+## Part II: Visualization
+
+```{r snp-distribution, message=TRUE, warning=TRUE}
+# Creating histogram
+snp_counts <- geno_pos_long %>%
+  distinct(SNP_ID, Chromosome) %>%
+  count(Chromosome)
+
+ggplot(snp_counts, aes(x = factor(Chromosome), y = n)) +
+  geom_col() +
+  labs(title = "SNP markers per chromosome (overall)",
+       x = "Chromosome", y = "# SNP markers")
+
+```
+
+```{r maize-vs-teosinte, message=TRUE, warning=TRUE}
+# SNP markers per chromosome
+snp_counts_taxa <- bind_rows(
+  maize_long %>% mutate(Taxa = "Maize"),
+  teo_long   %>% mutate(Taxa = "Teosinte")
+) %>%
+  distinct(Taxa, SNP_ID, Chromosome) %>%
+  count(Taxa, Chromosome)
+
+ggplot(snp_counts_taxa, aes(x = factor(Chromosome), y = n, fill = Taxa)) +
+  geom_col(position = "dodge") +
+  labs(title = "SNP markers per chromosome: Maize vs Teosinte",
+       x = "Chromosome", y = "# SNP markers")
+
+```
+
+```{r polymorphic-snps, message=TRUE, warning=TRUE}
+# Polymorphic SNPs per chromosome
+polymorphic_chr <- bind_rows(
+  maize_long %>% mutate(Taxa="Maize"),
+  teo_long %>% mutate(Taxa="Teosinte")
+) %>%
+  filter(Genotype != "?/?") %>%
+  group_by(Taxa, Chromosome, SNP_ID) %>%
+  summarize(n_genotypes = n_distinct(Genotype), .groups="drop") %>%
+  filter(n_genotypes > 1) %>%
+  count(Taxa, Chromosome)
+
+ggplot(polymorphic_chr,
+       aes(x=factor(Chromosome), y=n, fill=Taxa)) +
+  geom_col(position="dodge") +
+  labs(title="Polymorphic SNPs per chromosome",
+       x="Chromosome",
+       y="# polymorphic SNPs")
+
+```
+
+```{r genotype-classification, message=TRUE, warning=TRUE}
+#Classifying by genotype
+classify_site <- function(g) {
+  if (is.na(g) || g == "" || g == "NA" || g == "?/?") return("Missing")
+  
+  parts <- strsplit(g, "/", fixed = TRUE)[[1]]
+  
+  if (parts[1] == parts[2]) {
+    "Homozygous"
+  } else {
+    "Heterozygous"
+  }
+}
+
+geno_pos_long2 <- geno_pos_long %>%
+  mutate(SiteClass = vapply(Genotype, classify_site, character(1)))
+
+```
+
+```{r genotype-proportions, message=TRUE, warning=TRUE}
+# Genotype proportion plots
+
+ggplot(geno_pos_long2,
+       aes(x = Sample_ID, fill = SiteClass)) +
+  geom_bar(position = "fill") +
+  facet_wrap(~ Group, scales = "free_x") +
+  labs(
+    title = "Proportion of genotype classes per sample",
+    x = "Sample",
+    y = "Proportion"
+  ) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+
+```{r group-proportions, message=TRUE, warning=TRUE}
+# Proportions by group plot
+group_props <- geno_pos_long2 %>%
+  count(Group, SiteClass)
+
+ggplot(group_props,
+       aes(x = Group, fill = SiteClass, y = n)) +
+  geom_bar(position = "fill", stat = "identity") +
+  labs(
+    title = "Proportion of genotype classes by population group",
+    x = "Group",
+    y = "Proportion"
+  )
+
+```
